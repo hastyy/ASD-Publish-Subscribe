@@ -11,19 +11,20 @@ object HyparView {
 
   // Messages
   final case class Join(id: String)
-  final case class ForwardJoin(newNode: String, ttl: Int, sender: String)
-  final case class AcceptNeighbour(sender: String)  // TODO: rename to Connect (?)
+  final case class ForwardJoin(sender: String, newNode: String, ttl: Int)
+  final case class Connect(sender: String)
   final case class Disconnect(sender: String)
-  final case class HeartbeatSignal(sender: String)
-  final case class ReceiveNeighborship(sender: String)
+  final case class Heartbeat(sender: String)
+  final case class RequestNeighbourship(sender: String)
+  final case class Shuffle(sender: String, issuer: String, sample: Set[String], ttl: Int)
+  final case class ShuffleReply(newSample: Set[String], sentSample: Set[String])
   final case object GetNeighbours // TODO
-  final case object Heartbeat
-  final case object RequestNeighborship
+  final case object HeartbeatTimer
+  final case object RequestNeighbourshipTimer
+  final case object ShuffleTimer
 
 }
 
-// TODO: Shuffle passive view - cyclon without age (amostra = myself + some of active + some of passive) - mal recebemos a amostra deitar fora da amostra o que já está na activa e passiva
-// TODO: passiveView = K * activeView ? (enforce? how to get connections?)
 class HyparView(ip: String, port: Int, contact: String, nNodes: Int) extends Actor with Timers {
   import HyparView._
 
@@ -40,9 +41,9 @@ class HyparView(ip: String, port: Int, contact: String, nNodes: Int) extends Act
   var passiveView: Set[String] = Set()  // Set of nodes
 
   // Timers
-  timers.startPeriodicTimer(Heartbeat, Heartbeat, 15 seconds)
-  timers.startPeriodicTimer(RequestNeighborship, RequestNeighborship, 5 seconds)
-
+  timers.startPeriodicTimer(HeartbeatTimer, HeartbeatTimer, 15 seconds)
+  timers.startPeriodicTimer(RequestNeighbourshipTimer, RequestNeighbourshipTimer, 15 seconds)
+  timers.startPeriodicTimer(ShuffleTimer, ShuffleTimer, 15 seconds)
 
   // Init
   override def preStart(): Unit = {
@@ -61,18 +62,19 @@ class HyparView(ip: String, port: Int, contact: String, nNodes: Int) extends Act
       addNodeActiveView(newNode)
       activeView.keySet.foreach(node => {
         if (node != newNode) {
-          getReference(node) ! ForwardJoin(newNode, ARWL, MYSELF)
+          getReference(node) ! ForwardJoin(MYSELF, newNode, ARWL)
         }
       })
+      println("\n\n\n\n\n")
 
-    case ForwardJoin(newNode, ttl, sender) =>
+    case ForwardJoin(sender, newNode, ttl) =>
       println("Received ForwardJoin from " + sender + " : New node is " + newNode)
       if (ttl == 0 || activeView.size == 1) {
         println("Adding the node to active view.")
         if (addNodeActiveView(newNode)) {
           passiveView = passiveView - newNode // Added
-          // Only sends AcceptNeighbour message if addNodeActiveView succeeds
-          getReference(newNode) ! AcceptNeighbour(MYSELF)
+          // Only sends Connect message if addNodeActiveView succeeds
+          getReference(newNode) ! Connect(MYSELF)
         }
       } else {
         if (ttl == PRWL) {
@@ -82,13 +84,15 @@ class HyparView(ip: String, port: Int, contact: String, nNodes: Int) extends Act
         // If no node is found matching the requisites, then we send the message to no one (empty String)
         val node = activeView.keys.find(n => n != sender && n != newNode) getOrElse ""
         println("Sending ForwardJoin message to " + node)
-        getReference(node) ! ForwardJoin(newNode, ttl-1, MYSELF)
+        getReference(node) ! ForwardJoin(MYSELF, newNode, ttl-1)
       }
+      println("\n\n\n\n\n")
 
-    case AcceptNeighbour(sender) =>
-      println("Received AcceptNeighbour message from " + sender)
+    case Connect(sender) =>
+      println("Received Connect message from " + sender)
       passiveView = passiveView - sender
       addNodeActiveView(sender)
+      println("\n\n\n\n\n")
 
     case Disconnect(sender) =>
       println("Received Disconnect message from " + sender + " - Removing it from active view if it's there.")
@@ -96,27 +100,29 @@ class HyparView(ip: String, port: Int, contact: String, nNodes: Int) extends Act
         activeView = activeView - sender
         addNodePassiveView(sender)
       }
+      println("\n\n\n\n\n")
 
-    case Heartbeat =>
+    case HeartbeatTimer =>
       activeView.keySet.foreach(node => {
         // 1. Ping the peer so it knows we're alive
-        getReference(node) ! HeartbeatSignal(MYSELF)
+        getReference(node) ! Heartbeat(MYSELF)
 
         // 'Decide' if our peer is alive or not, and act upon that (level of) certainty
         val (flatline, counter) = activeView(node)
         if (!flatline) {
-          // println(">>>> " + node + " is healthy AF.")
           activeView(node) = (true, 0)
         } else if ((counter + 1) == 3) {
           println(">>>> We think " + node + " has died. Replacing it in the active view...")
+          println("\n\n\n\n\n")
           patchActiveView(node)
         } else {
           println(">>>> " + node + " missed a heartbeat. Counter: " + (counter + 1))
+          println("\n\n\n\n\n")
           activeView(node) = (true, counter + 1)
         }
       })
 
-    case HeartbeatSignal(sender) =>
+    case Heartbeat(sender) =>
       if (activeView.contains(sender)) {
         // Received an heartbeat, vitals line IS NOT flat
         // Reset counter
@@ -124,11 +130,12 @@ class HyparView(ip: String, port: Int, contact: String, nNodes: Int) extends Act
         activeView(sender) = (false, 0)
       }
 
-    case RequestNeighborship =>
-      // println("VIEWS")
-      // printActiveView()
-      // printPassiveView()
-      // println("CLOSE VIEWS")
+    case RequestNeighbourshipTimer =>
+      println("VIEWS")
+      printActiveView()
+      printPassiveView()
+      println("CLOSE VIEWS")
+      println("\n\n\n\n\n")
 
       val requestAmount = min(ACTIVE_VIEW_MAX_SIZE - activeView.size, passiveView.size)
       if(requestAmount > 0) {
@@ -139,19 +146,65 @@ class HyparView(ip: String, port: Int, contact: String, nNodes: Int) extends Act
           val randomPeer = auxSet.toVector(new Random().nextInt(auxSet.size))
           //println(">>>> Will send neighbor request to " + randomPeer)
           auxSet = auxSet - randomPeer
-          getReference(randomPeer) ! ReceiveNeighborship(MYSELF)
+          getReference(randomPeer) ! RequestNeighbourship(MYSELF)
         }
       }
 
-    case ReceiveNeighborship(sender) =>
-        if(activeView.size < ACTIVE_VIEW_MAX_SIZE) {
-          println(">>>> Received a neighbor request from " + sender + "and have free slots.")
-          if(addNodeActiveView(sender)) {
-            println("Will accept request from " + sender)
-            passiveView = passiveView - sender
-            getReference(sender) ! AcceptNeighbour(MYSELF)
+    case RequestNeighbourship(sender) =>
+      if(activeView.size < ACTIVE_VIEW_MAX_SIZE) {
+        println(">>>> Received a neighbour request from " + sender + "and have free slots.")
+        if(addNodeActiveView(sender)) {
+          println("Will accept request from " + sender)
+          passiveView = passiveView - sender
+          getReference(sender) ! Connect(MYSELF)
+        }
+        println("\n\n\n\n\n")
+      }
+
+    case ShuffleTimer =>
+      // 1. Create the sample set
+      var sample: Set[String] = Set(MYSELF) union activeView.keySet
+      if (passiveView.nonEmpty) {
+        var auxSet: Set[String] = passiveView
+        for (i <- 1 to min(passiveView.size, PASSIVE_VIEW_MAX_SIZE - sample.size)) {
+          val randomPeer = auxSet.toVector(new Random().nextInt(auxSet.size))
+          auxSet = auxSet - randomPeer
+          sample = sample + randomPeer
+        }
+      }
+
+      // 2. Select a peer at random and set it the Shuffle request containing the sample
+      if (activeView.nonEmpty) {
+        val randomPeer = activeView.keySet.toVector(new Random().nextInt(activeView.size))
+        getReference(randomPeer) ! Shuffle(MYSELF, MYSELF, sample, ARWL)
+      }
+
+    case Shuffle(sender, issuer, sample, ttl) =>
+      val currentTTL = ttl - 1
+      if (currentTTL == 0 || activeView.size == 1) {
+        // 1. Prepare the sample for the ShuffleReply
+        var replySample: Set[String] = Set(MYSELF)  // TODO: Should include MYSELF ?
+        if (passiveView.nonEmpty) {
+          var auxSet: Set[String] = passiveView
+          for (i <- 1 to min(passiveView.size, sample.size)) {
+            val randomPeer = auxSet.toVector(new Random().nextInt(auxSet.size))
+            auxSet = auxSet - randomPeer
+            replySample = replySample + randomPeer
           }
         }
+
+        // 2. Send the ShuffleReply
+        getReference(issuer) ! ShuffleReply(replySample, sample)
+
+        // 3. Integrate sample elements
+        integrateSample(sample, replySample)
+      } else {
+        val randomPeer = (activeView.keySet - sender).toVector(new Random().nextInt(activeView.size - 1))
+        getReference(randomPeer) ! Shuffle(MYSELF, issuer, sample, currentTTL)
+      }
+
+    case ShuffleReply(newSample, sentSample) =>
+      integrateSample(newSample, sentSample)
 
   }
 
@@ -160,21 +213,19 @@ class HyparView(ip: String, port: Int, contact: String, nNodes: Int) extends Act
       if (activeView.size == ACTIVE_VIEW_MAX_SIZE) {
         dropRandomElementFromActiveView()
       }
-      activeView(node) = (false, 0) // flatline = false because we consider node is alive at this point
-      printActiveView()
+      activeView(node) = (false, 0) // flatline = false because we consider node to be alive at this point
       return true
     }
     return false
   }
 
   private def addNodePassiveView(node: String): Unit = {
-    if (node != MYSELF && !activeView.keySet.contains(node) && !passiveView.contains(node)) {
+    if (!node.equals(MYSELF) && !activeView.keySet.contains(node) && !passiveView.contains(node)) {
       if (passiveView.size == PASSIVE_VIEW_MAX_SIZE) {
         val nodeToExclude = passiveView.toVector(new Random().nextInt(PASSIVE_VIEW_MAX_SIZE))
         passiveView = passiveView - nodeToExclude
       }
       passiveView = passiveView + node
-      printPassiveView()
     }
   }
 
@@ -191,21 +242,48 @@ class HyparView(ip: String, port: Int, contact: String, nNodes: Int) extends Act
     getReference(deadPeer) ! Disconnect(MYSELF)
 
     // 2. Check if activeView is empty: if not, we don't need to execute the code below
-    if (activeView.size > 0) {
+    if (activeView.nonEmpty) {
       return
     }
 
-    // 3. (Agressively) Promote random node from passiveView to activeView
-    if (passiveView.size == 0) {
+    // 3. (Aggressively) Promote random node from passiveView to activeView
+    if (passiveView.isEmpty) {
       // We can't patch the activeView
       return
     }
     val node = passiveView.toVector(new Random().nextInt(passiveView.size))
     addNodeActiveView(node)
-    getReference(node) ! AcceptNeighbour(MYSELF)
+    getReference(node) ! Connect(MYSELF)
     passiveView = passiveView - node
     printActiveView()
     // TODO: Trigger neighbours indication
+  }
+
+  private def integrateSample(receivedSample: Set[String], sentSample: Set[String]): Unit = {
+    val newNodes = ((receivedSample diff activeView.keySet) diff passiveView) diff Set(MYSELF)
+    var auxSet = newNodes
+    while (passiveView.size < PASSIVE_VIEW_MAX_SIZE && auxSet.nonEmpty) {
+      val node = auxSet.toVector(new Random().nextInt(auxSet.size))
+      auxSet = auxSet - node
+      addNodePassiveView(node)
+    }
+
+    // If the code below executes, it means that we ran out of space in the active view before we ran out of new nodes
+    if (auxSet.nonEmpty) {
+      var dropSet: Set[String] = sentSample union (passiveView diff newNodes) // TODO: Might only want sentSample
+      while (auxSet.nonEmpty) {
+        // 1. Remove from passiveView
+        val nodeToDrop =
+          if (dropSet.nonEmpty) dropSet.toVector(new Random().nextInt(dropSet.size))
+          else passiveView.toVector(new Random().nextInt(passiveView.size))
+        passiveView = passiveView - nodeToDrop
+
+        // 2. Add new node to passiveView
+        val nodeToAdd = auxSet.toVector(new Random().nextInt(auxSet.size))
+        auxSet = auxSet - nodeToAdd
+        addNodePassiveView(nodeToAdd)
+      }
+    }
   }
 
   private def getReference(id: String) : ActorSelection = {
@@ -222,10 +300,8 @@ class HyparView(ip: String, port: Int, contact: String, nNodes: Int) extends Act
     passiveView.foreach(node => println(node))
   }
 
-  private def isNetworkCorrect(): Boolean = {
+  private def isNetworkCorrect: Boolean = {
     val inter = activeView.keySet intersect passiveView
-    return inter.size == 0
+    return inter.isEmpty
   }
-
-
 }
