@@ -26,7 +26,7 @@ object HyparView {
 }
 
 class HyparView(ip: String, port: Int, contact: String, nNodes: Int) extends Actor with Timers {
-  import HyparView._
+    import HyparView._
 
   // Constants
   val MYSELF: String = s"$ip:$port"
@@ -97,7 +97,7 @@ class HyparView(ip: String, port: Int, contact: String, nNodes: Int) extends Act
     case Disconnect(sender) =>
       println("Received Disconnect message from " + sender + " - Removing it from active view if it's there.")
       if (activeView.keySet.contains(sender)) {
-        activeView = activeView - sender
+        removeNodeActiveView(sender)
         addNodePassiveView(sender)
       }
       println("\n\n\n\n\n")
@@ -214,9 +214,15 @@ class HyparView(ip: String, port: Int, contact: String, nNodes: Int) extends Act
         dropRandomElementFromActiveView()
       }
       activeView(node) = (false, 0) // flatline = false because we consider node to be alive at this point
+      // TODO: Trigger neighbours indication
       return true
     }
     return false
+  }
+
+  private def removeNodeActiveView(node: String): Unit = {
+    activeView = activeView - node
+    // TODO: Trigger neighbours indication
   }
 
   private def addNodePassiveView(node: String): Unit = {
@@ -231,14 +237,22 @@ class HyparView(ip: String, port: Int, contact: String, nNodes: Int) extends Act
 
   private def dropRandomElementFromActiveView(): Unit = {
     val node = activeView.keySet.toVector(new Random().nextInt(activeView.size))
-    activeView = activeView - node
+    activeView = activeView - node  // Don't use removeNodeActiveView here, we don't need the neighbours indication
     addNodePassiveView(node)
     getReference(node) ! Disconnect(MYSELF)
   }
 
+  // TODO: This method is wrong. Must be fixed according to:
+  /**
+    * When a node p suspects that one of the nodes present in its active view has failed (by either disconnecting or
+    * blocking), it selects a random node q from its passive view and attempts to establish a TCP connection with q.
+    * If the connection fails to establish, node q is considered failed and removed from p’s passive view;
+    * another node q' is selected at random and a new attempt is made. The procedure is repeated until a connection is
+    * established with success.
+    */
   private def patchActiveView(deadPeer: String): Unit = {
     // 1. Remove 'dead' peer from activeView
-    activeView = activeView - deadPeer
+    removeNodeActiveView(deadPeer)
     getReference(deadPeer) ! Disconnect(MYSELF)
 
     // 2. Check if activeView is empty: if not, we don't need to execute the code below
@@ -256,7 +270,6 @@ class HyparView(ip: String, port: Int, contact: String, nNodes: Int) extends Act
     getReference(node) ! Connect(MYSELF)
     passiveView = passiveView - node
     printActiveView()
-    // TODO: Trigger neighbours indication
   }
 
   private def integrateSample(receivedSample: Set[String], sentSample: Set[String]): Unit = {
