@@ -6,7 +6,6 @@ object Main {
   def main(args: Array[String]): Unit = {
 
     if (args.length < 3) {
-      // TODO: Change args order (nProcesses 3rd) ?
       println("Usage: [myAddress] [myPort] [nProcesses] [contactAddress]* [contactPort]*")
       return
     }

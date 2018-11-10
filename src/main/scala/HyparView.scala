@@ -205,6 +205,7 @@ class HyparView(ip: String, port: Int, contact: String, nNodes: Int) extends Act
     getReference(node) ! AcceptNeighbour(MYSELF)
     passiveView = passiveView - node
     printActiveView()
+    // TODO: Trigger neighbours indication
   }
 
   private def getReference(id: String) : ActorSelection = {
@@ -228,16 +229,3 @@ class HyparView(ip: String, port: Int, contact: String, nNodes: Int) extends Act
 
 
 }
-
-
-/*var patchedActiveView = false
-    do {
-      val node = passiveView.toVector(new Random().nextInt(passiveView.size))
-      patchedActiveView = addNodeActiveView(node)
-      if (patchedActiveView) {
-        printActiveView()
-        getReference(node) ! AcceptNeighbour(MYSELF)
-        passiveView = passiveView - node
-        // TODO: Trigger neighbours indication
-      }
-    } while (!patchedActiveView)*/
