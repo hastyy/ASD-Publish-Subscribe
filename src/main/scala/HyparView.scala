@@ -15,8 +15,11 @@ object HyparView {
   final case class AcceptNeighbour(sender: String)  // TODO: rename to Connect (?)
   final case class Disconnect(sender: String)
   final case class HeartbeatSignal(sender: String)
+  final case class ReceiveNeighborship(sender: String)
   final case object GetNeighbours // TODO
   final case object Heartbeat
+  final case object RequestNeighborship
+
 }
 
 // TODO: Shuffle passive view - cyclon without age (amostra = myself + some of active + some of passive) - mal recebemos a amostra deitar fora da amostra o que já está na activa e passiva
@@ -37,7 +40,9 @@ class HyparView(ip: String, port: Int, contact: String, nNodes: Int) extends Act
   var passiveView: Set[String] = Set()  // Set of nodes
 
   // Timers
-  timers.startPeriodicTimer(Heartbeat, Heartbeat, 5 seconds)
+  timers.startPeriodicTimer(Heartbeat, Heartbeat, 15 seconds)
+  timers.startPeriodicTimer(RequestNeighborship, RequestNeighborship, 5 seconds)
+
 
   // Init
   override def preStart(): Unit = {
@@ -65,6 +70,7 @@ class HyparView(ip: String, port: Int, contact: String, nNodes: Int) extends Act
       if (ttl == 0 || activeView.size == 1) {
         println("Adding the node to active view.")
         if (addNodeActiveView(newNode)) {
+          passiveView = passiveView - newNode // Added
           // Only sends AcceptNeighbour message if addNodeActiveView succeeds
           getReference(newNode) ! AcceptNeighbour(MYSELF)
         }
@@ -99,7 +105,7 @@ class HyparView(ip: String, port: Int, contact: String, nNodes: Int) extends Act
         // 'Decide' if our peer is alive or not, and act upon that (level of) certainty
         val (flatline, counter) = activeView(node)
         if (!flatline) {
-          println(">>>> " + node + " is healthy AF.")
+          // println(">>>> " + node + " is healthy AF.")
           activeView(node) = (true, 0)
         } else if ((counter + 1) == 3) {
           println(">>>> We think " + node + " has died. Replacing it in the active view...")
@@ -114,9 +120,38 @@ class HyparView(ip: String, port: Int, contact: String, nNodes: Int) extends Act
       if (activeView.contains(sender)) {
         // Received an heartbeat, vitals line IS NOT flat
         // Reset counter
-        println(">>>> Received heartbeat from " + sender)
+        // println(">>>> Received heartbeat from " + sender)
         activeView(sender) = (false, 0)
       }
+
+    case RequestNeighborship =>
+      // println("VIEWS")
+      // printActiveView()
+      // printPassiveView()
+      // println("CLOSE VIEWS")
+
+      val requestAmount = min(ACTIVE_VIEW_MAX_SIZE - activeView.size, passiveView.size)
+      if(requestAmount > 0) {
+        // printPassiveView()
+        //println(">>>> Slots left to fill in Active View: " + requestAmount)
+        var auxSet: Set[String] = passiveView
+        for (i <- 1 to requestAmount) {
+          val randomPeer = auxSet.toVector(new Random().nextInt(auxSet.size))
+          //println(">>>> Will send neighbor request to " + randomPeer)
+          auxSet = auxSet - randomPeer
+          getReference(randomPeer) ! ReceiveNeighborship(MYSELF)
+        }
+      }
+
+    case ReceiveNeighborship(sender) =>
+        if(activeView.size < ACTIVE_VIEW_MAX_SIZE) {
+          println(">>>> Received a neighbor request from " + sender + "and have free slots.")
+          if(addNodeActiveView(sender)) {
+            println("Will accept request from " + sender)
+            passiveView = passiveView - sender
+            getReference(sender) ! AcceptNeighbour(MYSELF)
+          }
+        }
 
   }
 
@@ -185,6 +220,13 @@ class HyparView(ip: String, port: Int, contact: String, nNodes: Int) extends Act
     println("\n ############ PASSIVE VIEW WAS UPDATED ############")
     passiveView.foreach(node => println(node))
   }
+
+  private def isNetworkCorrect(): Boolean = {
+    val inter = activeView.keySet intersect passiveView
+    return inter.size == 0
+  }
+
+
 }
 
 
