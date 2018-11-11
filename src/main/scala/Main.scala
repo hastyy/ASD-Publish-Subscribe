@@ -58,10 +58,11 @@ object Main {
     breakable {
       do {
         input = readLine("> ")
+        println('\n')
+
         val expression = regex.findAllMatchIn(input).toList
         command = expression.map(element => element.toString).toArray
-
-        val action = if (!command.isEmpty) command(0).toString else ""
+        val action = if (command.nonEmpty) command(0).toString else ""
 
         action match {
           case "SUB" =>

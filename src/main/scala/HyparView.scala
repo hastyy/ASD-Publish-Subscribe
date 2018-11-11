@@ -1,6 +1,5 @@
 import akka.actor.{Actor, ActorSelection, Props, Timers}
 import scala.collection.mutable.{HashMap, Map}
-import scala.collection.Set
 import scala.math._
 import scala.util.Random
 import scala.concurrent.duration._
@@ -25,9 +24,10 @@ object HyparView {
   final case object ShuffleTimer
 }
 
+// TODO: Clone activeView + Neighbours indication isolated method
 class HyparView(ip: String, port: Int, contact: String, nNodes: Int) extends Actor with Timers {
   import HyparView._
-  // import PublishSubscribe._
+  import PublishSubscribe._
 
   // Constants
   val MYSELF: String = s"$ip:$port"
@@ -62,7 +62,7 @@ class HyparView(ip: String, port: Int, contact: String, nNodes: Int) extends Act
       println("Received Join from " + newNode)
       addNodeActiveView(newNode)
       activeView.keySet.foreach(node => {
-        if (node != newNode) {
+        if (!node.equals(newNode)) {
           getReference(node) ! ForwardJoin(MYSELF, newNode, ARWL)
         }
       })
@@ -83,7 +83,7 @@ class HyparView(ip: String, port: Int, contact: String, nNodes: Int) extends Act
           addNodePassiveView(newNode)
         }
         // If no node is found matching the requisites, then we send the message to no one (empty String)
-        val node = activeView.keys.find(n => n != sender && n != newNode) getOrElse ""
+        val node = activeView.keys.find(n => !n.equals(sender) && !n.equals(newNode)) getOrElse ""
         println("Sending ForwardJoin message to " + node)
         getReference(node) ! ForwardJoin(MYSELF, newNode, ttl-1)
       }
@@ -208,7 +208,9 @@ class HyparView(ip: String, port: Int, contact: String, nNodes: Int) extends Act
       integrateSample(newSample, sentSample)
 
     case GetNeighbours =>
-      getPublishSubscribeReference() ! PublishSubscribe.Neighbours(activeView.keySet) //Trigger neighbours(n) indication
+      var activeViewClone: Set[String] = Set()
+      activeView.keySet.foreach(n => activeViewClone = activeViewClone + n)
+      getPublishSubscribeReference() ! Neighbours(activeViewClone) //Trigger neighbours(n) indication
 
   }
 
@@ -218,7 +220,9 @@ class HyparView(ip: String, port: Int, contact: String, nNodes: Int) extends Act
         dropRandomElementFromActiveView()
       }
       activeView(node) = (false, 0) // flatline = false because we consider node to be alive at this point
-      getPublishSubscribeReference() ! PublishSubscribe.Neighbours(activeView.keySet) //Trigger neighbours(n) indication
+      var activeViewClone: Set[String] = Set()
+      activeView.keySet.foreach(n => activeViewClone = activeViewClone + n)
+      getPublishSubscribeReference() ! Neighbours(activeViewClone) //Trigger neighbours(n) indication
       return true
     }
     return false
@@ -226,7 +230,9 @@ class HyparView(ip: String, port: Int, contact: String, nNodes: Int) extends Act
 
   private def removeNodeActiveView(node: String): Unit = {
     activeView = activeView - node
-    getPublishSubscribeReference() ! PublishSubscribe.Neighbours(activeView.keySet) // Trigger neighbours(n) indication
+    var activeViewClone: Set[String] = Set()
+    activeView.keySet.foreach(n => activeViewClone = activeViewClone + n)
+    getPublishSubscribeReference() ! Neighbours(activeViewClone) // Trigger neighbours(n) indication
   }
 
   private def addNodePassiveView(node: String): Unit = {

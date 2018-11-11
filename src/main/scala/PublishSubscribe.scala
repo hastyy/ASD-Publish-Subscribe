@@ -1,6 +1,5 @@
 import akka.actor.{Actor, ActorSelection, Props, Timers}
 import scala.collection.mutable.{HashMap, Map}
-import scala.collection.Set
 import scala.concurrent.duration._
 
 object PublishSubscribe {
@@ -21,9 +20,11 @@ object PublishSubscribe {
   final case object AntiEntropyTimer
 }
 
+// TODO: TIRAR PRINTS
 class PublishSubscribe(ip: String, port: Int) extends Actor with Timers {
   import PublishSubscribe._
   import HyparView._
+  import Application.PSDeliver
 
   // Type definitions
   type DeliveredMessage = (String, String, String, Int) // (topic, message_id, message, hop_count)
@@ -57,12 +58,18 @@ class PublishSubscribe(ip: String, port: Int) extends Actor with Timers {
       if (neighbours.isEmpty) {
         neighbours = n
         neighbours.foreach(p => neighboursTopics(p) = Set())
+        println("Had no neighbours. Now have: " + neighbours.size)
+        announceTopics(n)
       } else {
-        mergeNeighbours(n)
+        val newNeighbours = mergeNeighbours(n)
+        println("Had some neighbours. Now have: " + neighbours.size)
+        announceTopics(newNeighbours)
       }
 
     case AntiEntropyTimer =>
+      println(">>>> AntiEntropyTimer disparou")
       val target = selectBestTarget()
+      println(">>>> Selected target: " + target)
       if (target != null) {
         var knownMessages: Set[String] = Set()
         delivered.values.foreach(m => {
@@ -73,6 +80,7 @@ class PublishSubscribe(ip: String, port: Int) extends Actor with Timers {
       }
 
     case Pull(sender, senderMsgs, senderTopics) =>
+      println(">>>> Received Pull from: " + sender)
       delivered.values.foreach(m => {
         val (topic, mid, message, hop) = m
         if (!senderMsgs.contains(mid) && senderTopics.contains(topic)) {
@@ -82,7 +90,7 @@ class PublishSubscribe(ip: String, port: Int) extends Actor with Timers {
 
     case EagerPush(sender, topic, mid, msg, hop) =>
       if (topics.contains(topic) && !delivered.contains(mid)) {
-        // TODO: Trigger PSDeliver(topic, message) indication
+        getApplicationReference() ! PSDeliver(topic, msg) // Trigger PSDeliver(topic, message) indication
         delivered(mid) = (topic, mid, msg, hop)
         requested = requested - mid // If it's there, removes
         (neighbours diff Set(sender)).foreach(p => {
@@ -108,9 +116,9 @@ class PublishSubscribe(ip: String, port: Int) extends Actor with Timers {
 
     case Publish(topic, message) =>
       val mid = generateID(topic+message)
-      if (topics.contains(topic)) {
+      if (topics.contains(topic) && !delivered.contains(mid)) {
         delivered(mid) = (topic, mid, message, 0)
-        // TODO: Trigger PSDeliver(topic, message) indication
+        getApplicationReference() ! PSDeliver(topic, message) // Trigger PSDeliver(topic, message) indication
       }
       neighbours.foreach(p => getReference(p) ! EagerPush(MYSELF, topic, mid, message, 1))
 
@@ -123,11 +131,13 @@ class PublishSubscribe(ip: String, port: Int) extends Actor with Timers {
       neighbours.foreach(p => getReference(p) ! TopicUpdate(MYSELF, topics))
 
     case TopicUpdate(sender, topics) =>
+      println(s">>>> $sender updated its topics!")
       neighboursTopics(sender) = topics
 
   }
 
-  private def mergeNeighbours(n: Set[String]): Unit = {
+  private def mergeNeighbours(n: Set[String]): Set[String] = {
+    var newNeighbours: Set[String] = Set()
     neighbours.foreach(p => {
       if (!n.contains(p)) {
         neighbours= neighbours - p
@@ -136,10 +146,22 @@ class PublishSubscribe(ip: String, port: Int) extends Actor with Timers {
     })
     n.foreach(p => {
       if (!neighbours.contains(p)) {
+        newNeighbours = newNeighbours + p
         neighbours= neighbours + p
         neighboursTopics(p) = Set()
       }
     })
+    return newNeighbours
+  }
+
+  private def announceTopics(n: Set[String]): Unit = {
+    println("ANNOUNCING TOPICS!!! Set size: " + n.size + " Number of topics: " + topics.size)
+    if (topics.nonEmpty) {
+      n.foreach(p => {
+        println(s"SENDING TOPIC UPDATE TO $p")
+        getReference(p) ! TopicUpdate(MYSELF, topics)
+      })
+    }
   }
 
   // Selects (one of) the node(s) which has more topics in common with us
@@ -148,11 +170,13 @@ class PublishSubscribe(ip: String, port: Int) extends Actor with Timers {
     var bestCommonCount = 0
     neighbours.foreach(p => {
       var commonTopicsCounts = 0
-      neighboursTopics(p).foreach(t => {
-        if (topics.contains(t)) {
-          commonTopicsCounts += 1
-        }
-      })
+      if (neighboursTopics.contains(p)) {
+        neighboursTopics(p).foreach(t => {
+          if (topics.contains(t)) {
+            commonTopicsCounts += 1
+          }
+        })
+      }
       if (commonTopicsCounts > bestCommonCount) {
         bestCommonCount = commonTopicsCounts
         target = p

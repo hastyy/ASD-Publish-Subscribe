@@ -1,11 +1,12 @@
-import akka.actor.{Actor, ActorRef, Props}
+import akka.actor.{Actor, ActorRef, ActorSelection, Props}
 import java.io._
 
 object Application {
-
+  // Constructor
   def props(ip: String, port: Int, pubSubActor: ActorRef): Props =
       Props(new Application(ip, port, pubSubActor))
 
+  // Messages
   final case class Publish(topic: String, message: String)
   final case class Subscribe(topic: String)
   final case class Unsubscribe(topic: String)
@@ -25,6 +26,7 @@ class Application(ip: String, port: Int, pubSubActor: ActorRef) extends Actor {
   var fileWriter: PrintWriter = null
   var topics: Set[String] = Set()
 
+  // Init
   override def preStart(): Unit = {
     super.preStart()
 
@@ -41,49 +43,61 @@ class Application(ip: String, port: Int, pubSubActor: ActorRef) extends Actor {
     fileWriter.close()
   }
 
+  // Receive
   override def receive: Receive = {
+
     case Publish(topic, message) =>
-      val log: String = "  > Published message of topic " + topic + " with the following content: \n   " + message + "\n\n"
-      println(log)
+      val log = s"[Published Message] [Topic: $topic] $message\n"
+      getPublishSubscribeReference() ! PublishSubscribe.Publish(topic, message)
       fileWriter.write(log)
+      fileWriter.flush()
+      println(log)
 
     case Subscribe(topic) =>
-      val log = "  > Subscribed topic " + topic + ".\n\n"
-
+      val log = s"[Subscribe] Topic: $topic\n"
+      getPublishSubscribeReference() ! PublishSubscribe.Subscribe(topic)
       topics = topics + topic
-      println(log)
       fileWriter.write(log)
+      fileWriter.flush()
+      println(log)
 
     case Unsubscribe(topic) =>
-      val log = "  > Unsubscribed topic " + topic + ".\n\n"
-
+      val log = s"[Unsubscribe] Topic: $topic\n"
+      getPublishSubscribeReference() ! PublishSubscribe.Unsubscribe(topic)
       topics = topics - topic
-      println(log)
       fileWriter.write(log)
+      fileWriter.flush()
+      println(log)
 
     case PSDeliver(topic, message) =>
-      val log = "  > Message received:\nTopic: " + topic + "\nMessage: " + message
-      println(log)
+      val log = s"[Message Received] [Topic: $topic] $message\n"
       fileWriter.write(log)
+      fileWriter.flush()
+      println(log)
 
     case GetTopics =>
       if (topics.nonEmpty) {
-        println("\n############### My Topics ###############\n")
-        topics.foreach(topic => println("   > " + topic))
+        println("############### My Topics ###############")
+        topics.foreach(println)
       } else {
         println("No subscribed topics yet.")
       }
 
     case Menu =>
-      getHelpMenu()
+      showHelpMenu()
+
   }
 
-  private def getHelpMenu() {
+  private def showHelpMenu() {
     println("\n############### MENU ###############")
     println("Subscribe a topic: SUB topic")
     println("Unsubscribe a topic: UNSUB topic")
     println("Publish a message: PUB topic message")
     println("Get subscribed topics: TOPICS\n\n")
+  }
+
+  private def getPublishSubscribeReference(): ActorSelection = {
+    context.actorSelection("akka.tcp://"+ Global.SYSTEM_NAME +"@" + MYSELF + "/user/" + Global.PUBLISH_SUBSCRIBE_ACTOR_NAME)
   }
 
 }
