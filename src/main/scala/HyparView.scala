@@ -1,5 +1,6 @@
 import akka.actor.{Actor, ActorSelection, Props, Timers}
 import scala.collection.mutable.{HashMap, Map}
+import scala.collection.Set
 import scala.math._
 import scala.util.Random
 import scala.concurrent.duration._
@@ -18,15 +19,15 @@ object HyparView {
   final case class RequestNeighbourship(sender: String)
   final case class Shuffle(sender: String, issuer: String, sample: Set[String], ttl: Int)
   final case class ShuffleReply(newSample: Set[String], sentSample: Set[String])
-  final case object GetNeighbours // TODO
+  final case object GetNeighbours
   final case object HeartbeatTimer
   final case object RequestNeighbourshipTimer
   final case object ShuffleTimer
-
 }
 
 class HyparView(ip: String, port: Int, contact: String, nNodes: Int) extends Actor with Timers {
-    import HyparView._
+  import HyparView._
+  // import PublishSubscribe._
 
   // Constants
   val MYSELF: String = s"$ip:$port"
@@ -206,6 +207,9 @@ class HyparView(ip: String, port: Int, contact: String, nNodes: Int) extends Act
     case ShuffleReply(newSample, sentSample) =>
       integrateSample(newSample, sentSample)
 
+    case GetNeighbours =>
+      getPublishSubscribeReference() ! PublishSubscribe.Neighbours(activeView.keySet) //Trigger neighbours(n) indication
+
   }
 
   private def addNodeActiveView(node: String): Boolean = {
@@ -214,7 +218,7 @@ class HyparView(ip: String, port: Int, contact: String, nNodes: Int) extends Act
         dropRandomElementFromActiveView()
       }
       activeView(node) = (false, 0) // flatline = false because we consider node to be alive at this point
-      // TODO: Trigger neighbours indication
+      getPublishSubscribeReference() ! PublishSubscribe.Neighbours(activeView.keySet) //Trigger neighbours(n) indication
       return true
     }
     return false
@@ -222,7 +226,7 @@ class HyparView(ip: String, port: Int, contact: String, nNodes: Int) extends Act
 
   private def removeNodeActiveView(node: String): Unit = {
     activeView = activeView - node
-    // TODO: Trigger neighbours indication
+    getPublishSubscribeReference() ! PublishSubscribe.Neighbours(activeView.keySet) // Trigger neighbours(n) indication
   }
 
   private def addNodePassiveView(node: String): Unit = {
@@ -301,6 +305,10 @@ class HyparView(ip: String, port: Int, contact: String, nNodes: Int) extends Act
 
   private def getReference(id: String) : ActorSelection = {
     context.actorSelection("akka.tcp://"+ Global.SYSTEM_NAME +"@" + id + "/user/" + Global.HYPARVIEW_ACTOR_NAME)
+  }
+
+  private def getPublishSubscribeReference(): ActorSelection = {
+    context.actorSelection("akka.tcp://"+ Global.SYSTEM_NAME +"@" + MYSELF + "/user/" + Global.PUBLISH_SUBSCRIBE_ACTOR_NAME)
   }
 
   private def printActiveView(): Unit = {
