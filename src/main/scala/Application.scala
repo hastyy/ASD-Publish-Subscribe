@@ -60,7 +60,7 @@ class Application(ip: String, port: Int, pubSubActor: ActorRef) extends Actor {
       println("Message received.")
 
     case GetTopics =>
-      if (topics.size > 0) {
+      if (topics.nonEmpty) {
         println("\n############### My Topics ###############\n")
         topics.foreach(topic => println("   > " + topic))
       } else {
@@ -68,7 +68,6 @@ class Application(ip: String, port: Int, pubSubActor: ActorRef) extends Actor {
       }
 
     case Menu =>
-      println("Received Menu message")
       getHelpMenu()
   }
 
