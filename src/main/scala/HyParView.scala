@@ -24,7 +24,6 @@ object HyParView {
   final case object ShuffleTimer
 }
 
-// TODO: Clone activeView + Neighbours indication isolated method
 class HyParView(ip: String, port: Int, contact: String, nNodes: Int) extends Actor with Timers {
   import HyParView._
   import PublishSubscribe._
@@ -154,7 +153,7 @@ class HyParView(ip: String, port: Int, contact: String, nNodes: Int) extends Act
       val currentTTL = ttl - 1
       if (currentTTL == 0 || activeView.size == 1) {
         // 1. Prepare the sample for the ShuffleReply
-        var replySample: Set[String] = Set(MYSELF)  // TODO: Should include MYSELF ?
+        var replySample: Set[String] = Set(MYSELF)
         if (passiveView.nonEmpty) {
           var auxSet: Set[String] = passiveView
           for (i <- 1 to min(passiveView.size, sample.size)) {
@@ -178,9 +177,7 @@ class HyParView(ip: String, port: Int, contact: String, nNodes: Int) extends Act
       integrateSample(newSample, sentSample)
 
     case GetNeighbours =>
-      var activeViewClone: Set[String] = Set()
-      activeView.keySet.foreach(n => activeViewClone = activeViewClone + n)
-      publishSubscribeActor ! Neighbours(activeViewClone) //Trigger neighbours(n) indication
+      triggerNeighboursIndication()
 
   }
 
@@ -190,9 +187,7 @@ class HyParView(ip: String, port: Int, contact: String, nNodes: Int) extends Act
         dropRandomElementFromActiveView()
       }
       activeView(node) = (false, 0) // flatline = false because we consider node to be alive at this point
-      var activeViewClone: Set[String] = Set()
-      activeView.keySet.foreach(n => activeViewClone = activeViewClone + n)
-      publishSubscribeActor ! Neighbours(activeViewClone) //Trigger neighbours(n) indication
+      triggerNeighboursIndication()
       return true
     }
     return false
@@ -200,9 +195,7 @@ class HyParView(ip: String, port: Int, contact: String, nNodes: Int) extends Act
 
   private def removeNodeActiveView(node: String): Unit = {
     activeView = activeView - node
-    var activeViewClone: Set[String] = Set()
-    activeView.keySet.foreach(n => activeViewClone = activeViewClone + n)
-    publishSubscribeActor ! Neighbours(activeViewClone) // Trigger neighbours(n) indication
+    triggerNeighboursIndication()
   }
 
   private def addNodePassiveView(node: String): Unit = {
@@ -222,7 +215,7 @@ class HyParView(ip: String, port: Int, contact: String, nNodes: Int) extends Act
     remoteHyParViewActor(node) ! Disconnect(MYSELF)
   }
 
-  // TODO: This method is wrong. Must be fixed according to:
+  // FIXME: This method is wrong. Must be fixed according to:
   /**
     * When a node p suspects that one of the nodes present in its active view has failed (by either disconnecting or
     * blocking), it selects a random node q from its passive view and attempts to establish a TCP connection with q.
@@ -261,7 +254,7 @@ class HyParView(ip: String, port: Int, contact: String, nNodes: Int) extends Act
 
     // If the code below executes, it means that we ran out of space in the active view before we ran out of new nodes
     if (auxSet.nonEmpty) {
-      var dropSet: Set[String] = sentSample union (passiveView diff newNodes) // TODO: Might only want sentSample
+      var dropSet: Set[String] = sentSample union (passiveView diff newNodes)
       while (auxSet.nonEmpty) {
         // 1. Remove from passiveView
         val nodeToDrop =
@@ -275,6 +268,12 @@ class HyParView(ip: String, port: Int, contact: String, nNodes: Int) extends Act
         addNodePassiveView(nodeToAdd)
       }
     }
+  }
+
+  private def triggerNeighboursIndication(): Unit = {
+    var activeViewClone: Set[String] = Set()
+    activeView.keySet.foreach(n => activeViewClone = activeViewClone + n)
+    publishSubscribeActor ! Neighbours(activeViewClone) // Trigger neighbours(n) indication
   }
 
   private def remoteHyParViewActor(id: String) : ActorSelection = {

@@ -20,7 +20,6 @@ object PublishSubscribe {
   final case object AntiEntropyTimer
 }
 
-// TODO: TIRAR PRINTS
 class PublishSubscribe(ip: String, port: Int) extends Actor with Timers {
   import PublishSubscribe._
   import HyParView._
