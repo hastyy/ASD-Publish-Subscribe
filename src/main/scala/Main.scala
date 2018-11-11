@@ -57,7 +57,7 @@ object Main {
     var command: Array[String] = null
     breakable {
       do {
-        input = readLine()
+        input = readLine("> ")
         val expression = regex.findAllMatchIn(input).toList
         command = expression.map(element => element.toString).toArray
 
@@ -97,6 +97,8 @@ object Main {
           case "Q" => break
           case _ => println("Unknown command.")
         }
+
+        Thread.sleep(500)
       } while(true)
     }
     println("Goodbye. See you next time!")
