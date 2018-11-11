@@ -27,6 +27,11 @@ class Application(ip: String, port: Int, pubSubActor: ActorRef) extends Actor {
 
   override def preStart(): Unit = {
     super.preStart()
+
+    val directory: File = new File("messages/")
+    if (!directory.exists()) {
+      directory.mkdir()
+    }
     logFile = new File("messages/" + MYSELF + ".log")
     fileWriter = new PrintWriter(logFile)
   }
@@ -71,12 +76,11 @@ class Application(ip: String, port: Int, pubSubActor: ActorRef) extends Actor {
       getHelpMenu()
   }
 
-
   private def getHelpMenu() {
     println("\n############### MENU ###############")
     println("Subscribe a topic: SUB topic")
     println("Unsubscribe a topic: UNSUB topic")
-    println("Publish a message: PUB message topic")
+    println("Publish a message: PUB topic message")
     println("Get subscribed topics: TOPICS\n\n")
   }
 
