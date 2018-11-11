@@ -67,7 +67,7 @@ class PublishSubscribe(ip: String, port: Int) extends Actor with Timers {
           val mid = m._2
           knownMessages = knownMessages + mid
         })
-        getReference(target) ! Pull(MYSELF, knownMessages, topics) //TODO: Should first check if knownMessages is empty?
+        getReference(target) ! Pull(MYSELF, knownMessages, topics) // knownMessages might be an empty set
       }
 
     case Pull(sender, senderMsgs, senderTopics) =>
@@ -105,7 +105,12 @@ class PublishSubscribe(ip: String, port: Int) extends Actor with Timers {
       }
 
     case Publish(topic, message) =>
-      // TODO: Implement
+      val mid = generateID(topic+message)
+      if (topics.contains(topic)) {
+        delivered(mid) = (topic, mid, message, 0)
+        // TODO: Trigger PSDeliver(topic, message)
+      }
+      neighbours.foreach(p => getReference(p) ! EagerPush(MYSELF, topic, mid, message, 1))
 
     case Subscribe(topic) =>
       topics = topics + topic
@@ -152,6 +157,17 @@ class PublishSubscribe(ip: String, port: Int) extends Actor with Timers {
       }
     })
     return target
+  }
+
+  // MD5 implementation from the internet ¯\_(ツ)_/¯
+  def generateID(s: String): String = {
+    import java.security.MessageDigest
+    import java.math.BigInteger
+    val md = MessageDigest.getInstance("MD5")
+    val digest = md.digest(s.getBytes)
+    val bigInt = new BigInteger(1,digest)
+    val hashedString = bigInt.toString(16)
+    return hashedString
   }
 
   private def getReference(id: String) : ActorSelection = {
