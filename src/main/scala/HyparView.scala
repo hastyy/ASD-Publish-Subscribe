@@ -132,11 +132,11 @@ class HyparView(ip: String, port: Int, contact: String, nNodes: Int) extends Act
       }
 
     case RequestNeighbourshipTimer =>
-      println("VIEWS")
+      /*println("VIEWS")
       printActiveView()
       printPassiveView()
       println("CLOSE VIEWS")
-      println("\n\n\n\n\n")
+      println("\n\n\n\n\n")*/
 
       val requestAmount = min(ACTIVE_VIEW_MAX_SIZE - activeView.size, passiveView.size)
       if(requestAmount > 0) {

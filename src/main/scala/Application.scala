@@ -27,7 +27,7 @@ class Application(ip: String, port: Int, pubSubActor: ActorRef) extends Actor {
 
   override def preStart(): Unit = {
     super.preStart()
-    logFile = new File("src/main/scala/messages/" + MYSELF + ".log")
+    logFile = new File("messages/" + MYSELF + ".log")
     fileWriter = new PrintWriter(logFile)
   }
 
@@ -68,6 +68,7 @@ class Application(ip: String, port: Int, pubSubActor: ActorRef) extends Actor {
       }
 
     case Menu =>
+      println("Received Menu message")
       getHelpMenu()
   }
 
