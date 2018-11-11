@@ -1,5 +1,10 @@
 import akka.actor.ActorSystem
 import com.typesafe.config.ConfigFactory
+import scala.io.StdIn
+import util.control.Breaks._
+import scala.util.matching._
+
+import Application._
 
 
 object Main {
@@ -31,11 +36,66 @@ object Main {
     val host = actorSystem.settings.config.getString("akka.remote.netty.tcp.hostname")
     val port = actorSystem.settings.config.getString("akka.remote.netty.tcp.port")
 
-    // Actors
+    Actors
     val hyparView = actorSystem.actorOf(
       HyparView.props(host, port.toInt, contactID, nProcesses),
       Global.HYPARVIEW_ACTOR_NAME
     )
 
+    val application = actorSystem.actorOf(
+      Application.props(host, port.toInt, null),
+      Global.APPLICATION_ACTOR_NAME
+    )
+
+    println("Welcome to Publish-Subscribe application. HELP for menu and Q to exit application.")
+    val regex = new Regex("\"(.*?)\"|([^\\s]+)")
+    var input: String = null
+    var command: Array[String] = null
+    breakable {
+      do {
+        input = readLine()
+        val expression = regex.findAllMatchIn(input).toList
+        command = expression.map(element => element.toString).toArray
+
+        val action = command(0).toString
+
+        action match {
+          case "SUB" =>
+            if(command.size == 2) {
+              application ! Subscribe(command(1))
+            } else {
+              println("Wrong number of arguments.")
+            }
+          case "UNSUB" =>
+            if(command.size == 2) {
+              application ! Unsubscribe(command(1))
+            } else {
+              println("Wrong number of arguments.")
+            }
+          case "PUB" =>
+            if(command.size == 3) {
+              application ! Publish(command(1), command(2))
+            } else {
+              println("Wrong number of arguments.")
+            }
+          case "TOPICS" =>
+            if(command.size == 1) {
+              application ! GetTopics
+            } else {
+              println("Wrong number of arguments.")
+            }
+          case "HELP" =>
+            if (command.size == 1) {
+              application ! Menu
+            } else {
+               println("Wrong number of arguments.")
+            }
+          case "Q" => break
+          case _ => println("Unknown command.")
+        }
+      } while(true)
+    }
+    println("Goodbye. See you next time!")
+    actorSystem.stop(application)
   }
 }
