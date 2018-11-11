@@ -23,7 +23,7 @@ object PublishSubscribe {
 // TODO: TIRAR PRINTS
 class PublishSubscribe(ip: String, port: Int) extends Actor with Timers {
   import PublishSubscribe._
-  import HyparView._
+  import HyParView._
   import Application.PSDeliver
 
   // Type definitions

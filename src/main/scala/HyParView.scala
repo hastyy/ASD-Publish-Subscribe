@@ -4,10 +4,10 @@ import scala.math._
 import scala.util.Random
 import scala.concurrent.duration._
 
-object HyparView {
+object HyParView {
   // Constructor
   def props(ip: String, port: Int, contact: String, nNodes: Int): Props =
-    Props(new HyparView(ip, port, contact, nNodes))
+    Props(new HyParView(ip, port, contact, nNodes))
 
   // Messages
   final case class Join(id: String)
@@ -25,8 +25,8 @@ object HyparView {
 }
 
 // TODO: Clone activeView + Neighbours indication isolated method
-class HyparView(ip: String, port: Int, contact: String, nNodes: Int) extends Actor with Timers {
-  import HyparView._
+class HyParView(ip: String, port: Int, contact: String, nNodes: Int) extends Actor with Timers {
+  import HyParView._
   import PublishSubscribe._
 
   // Constants
