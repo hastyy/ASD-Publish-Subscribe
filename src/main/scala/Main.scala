@@ -36,6 +36,10 @@ object Main {
       HyparView.props(host, port.toInt, contactID, nProcesses),
       Global.HYPARVIEW_ACTOR_NAME
     )
+    val publishSubscribe = actorSystem.actorOf(
+      PublishSubscribe.props(host, port.toInt),
+      Global.PUBLISH_SUBSCRIBE_ACTOR_NAME
+    )
 
   }
 }

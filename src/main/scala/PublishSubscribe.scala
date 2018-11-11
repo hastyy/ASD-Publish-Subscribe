@@ -1,5 +1,6 @@
 import akka.actor.{Actor, ActorSelection, Props, Timers}
 import scala.collection.mutable.{HashMap, Map}
+import scala.collection.Set
 import scala.concurrent.duration._
 
 object PublishSubscribe {
@@ -22,6 +23,7 @@ object PublishSubscribe {
 
 class PublishSubscribe(ip: String, port: Int) extends Actor with Timers {
   import PublishSubscribe._
+  import HyparView._
 
   // Type definitions
   type DeliveredMessage = (String, String, String, Int) // (topic, message_id, message, hop_count)
@@ -45,7 +47,7 @@ class PublishSubscribe(ip: String, port: Int) extends Actor with Timers {
   // Init
   override def preStart(): Unit = {
     super.preStart()
-    // TODO: Trigger GetNeighbours()
+    getHyParViewReference() ! GetNeighbours // Trigger GetNeighbours() request
   }
 
   // Receive
@@ -80,7 +82,7 @@ class PublishSubscribe(ip: String, port: Int) extends Actor with Timers {
 
     case EagerPush(sender, topic, mid, msg, hop) =>
       if (topics.contains(topic) && !delivered.contains(mid)) {
-        // TODO: Trigger PSDeliver(topic, message)
+        // TODO: Trigger PSDeliver(topic, message) indication
         delivered(mid) = (topic, mid, msg, hop)
         requested = requested - mid // If it's there, removes
         (neighbours diff Set(sender)).foreach(p => {
@@ -108,7 +110,7 @@ class PublishSubscribe(ip: String, port: Int) extends Actor with Timers {
       val mid = generateID(topic+message)
       if (topics.contains(topic)) {
         delivered(mid) = (topic, mid, message, 0)
-        // TODO: Trigger PSDeliver(topic, message)
+        // TODO: Trigger PSDeliver(topic, message) indication
       }
       neighbours.foreach(p => getReference(p) ! EagerPush(MYSELF, topic, mid, message, 1))
 
@@ -172,5 +174,13 @@ class PublishSubscribe(ip: String, port: Int) extends Actor with Timers {
 
   private def getReference(id: String) : ActorSelection = {
     context.actorSelection("akka.tcp://"+ Global.SYSTEM_NAME +"@" + id + "/user/" + Global.PUBLISH_SUBSCRIBE_ACTOR_NAME)
+  }
+
+  private def getHyParViewReference(): ActorSelection = {
+    context.actorSelection("akka.tcp://"+ Global.SYSTEM_NAME +"@" + MYSELF + "/user/" + Global.HYPARVIEW_ACTOR_NAME)
+  }
+
+  private def getApplicationReference(): ActorSelection = {
+    context.actorSelection("akka.tcp://"+ Global.SYSTEM_NAME +"@" + MYSELF + "/user/" + Global.APPLICATION_ACTOR_NAME)
   }
 }
