@@ -3,8 +3,8 @@ import java.io._
 
 object Application {
   // Constructor
-  def props(ip: String, port: Int, pubSubActor: ActorRef): Props =
-      Props(new Application(ip, port, pubSubActor))
+  def props(ip: String, port: Int): Props =
+      Props(new Application(ip, port))
 
   // Messages
   final case class Publish(topic: String, message: String)
@@ -15,7 +15,7 @@ object Application {
   final case object Menu
 }
 
-class Application(ip: String, port: Int, pubSubActor: ActorRef) extends Actor {
+class Application(ip: String, port: Int) extends Actor {
   import Application._
 
   // Constants
@@ -48,14 +48,14 @@ class Application(ip: String, port: Int, pubSubActor: ActorRef) extends Actor {
 
     case Publish(topic, message) =>
       val log = s"[Published Message] [Topic: $topic] $message\n"
-      getPublishSubscribeReference() ! PublishSubscribe.Publish(topic, message)
+      publishSubscribeActor ! PublishSubscribe.Publish(topic, message)
       fileWriter.write(log)
       fileWriter.flush()
       println(log)
 
     case Subscribe(topic) =>
       val log = s"[Subscribe] Topic: $topic\n"
-      getPublishSubscribeReference() ! PublishSubscribe.Subscribe(topic)
+      publishSubscribeActor ! PublishSubscribe.Subscribe(topic)
       topics = topics + topic
       fileWriter.write(log)
       fileWriter.flush()
@@ -63,7 +63,7 @@ class Application(ip: String, port: Int, pubSubActor: ActorRef) extends Actor {
 
     case Unsubscribe(topic) =>
       val log = s"[Unsubscribe] Topic: $topic\n"
-      getPublishSubscribeReference() ! PublishSubscribe.Unsubscribe(topic)
+      publishSubscribeActor ! PublishSubscribe.Unsubscribe(topic)
       topics = topics - topic
       fileWriter.write(log)
       fileWriter.flush()
@@ -79,8 +79,10 @@ class Application(ip: String, port: Int, pubSubActor: ActorRef) extends Actor {
       if (topics.nonEmpty) {
         println("############### My Topics ###############")
         topics.foreach(println)
+        println()
       } else {
         println("No subscribed topics yet.")
+        println()
       }
 
     case Menu =>
@@ -96,8 +98,8 @@ class Application(ip: String, port: Int, pubSubActor: ActorRef) extends Actor {
     println("Get subscribed topics: TOPICS\n\n")
   }
 
-  private def getPublishSubscribeReference(): ActorSelection = {
-    context.actorSelection("akka.tcp://"+ Global.SYSTEM_NAME +"@" + MYSELF + "/user/" + Global.PUBLISH_SUBSCRIBE_ACTOR_NAME)
+  private def publishSubscribeActor: ActorSelection = {
+    context.actorSelection(s"akka.tcp://${Global.SYSTEM_NAME}@$MYSELF/user/${Global.PUBLISH_SUBSCRIBE_ACTOR_NAME}")
   }
 
 }

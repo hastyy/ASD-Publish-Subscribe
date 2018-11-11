@@ -22,17 +22,21 @@ object Main {
 
     // Load main/resources/application.conf file as Config instance
     val config = ConfigFactory.load("application.conf")
-    // Create a new config instance with given property tree
-    val myConfig = ConfigFactory.parseString("akka.remote.netty.tcp.port=" + myPort)
-    // Merge the newly created configuration with the loaded config to get the missing fields
-    val combined = myConfig.withFallback(config)
+
+    // Create new Config instances for host address and port
+    val hostConfig = ConfigFactory.parseString("akka.remote.netty.tcp.host=" + myAddress)
+    val portConfig = ConfigFactory.parseString("akka.remote.netty.tcp.port=" + myPort)
+
+    // Merge the newly created configurations with the loaded config to get the missing fields
+    val combined = hostConfig.withFallback(portConfig).withFallback(config)
+
     // Load the new configuration
     val complete = ConfigFactory.load(combined)
 
     // Create the actor system
     val actorSystem: ActorSystem = ActorSystem(Global.SYSTEM_NAME, complete)
 
-    // The code below is here for future reference
+    // Pulling the values out of the configuration tree (should be similar to myAddress and myPort)
     val host = actorSystem.settings.config.getString("akka.remote.netty.tcp.hostname")
     val port = actorSystem.settings.config.getString("akka.remote.netty.tcp.port")
 
@@ -45,9 +49,8 @@ object Main {
       PublishSubscribe.props(host, port.toInt),
       Global.PUBLISH_SUBSCRIBE_ACTOR_NAME
     )
-
     val application = actorSystem.actorOf(
-      Application.props(host, port.toInt, null),
+      Application.props(host, port.toInt),
       Global.APPLICATION_ACTOR_NAME
     )
 
@@ -62,7 +65,7 @@ object Main {
 
         val expression = regex.findAllMatchIn(input).toList
         command = expression.map(element => element.toString).toArray
-        val action = if (command.nonEmpty) command(0).toString else ""
+        val action: String = if (command.nonEmpty) command(0) else ""
 
         action match {
           case "SUB" =>
@@ -96,10 +99,11 @@ object Main {
                println("Wrong number of arguments.")
             }
           case "Q" => break
+          case "" => print("")
           case _ => println("Unknown command.")
         }
 
-        Thread.sleep(500)
+        Thread.sleep(500) // Helps the prompt not getting
       } while(true)
     }
     println("Goodbye. See you next time!")
@@ -109,5 +113,6 @@ object Main {
     actorSystem.stop(publishSubscribe)
     actorSystem.stop(hyparView)
     actorSystem.terminate()
+
   }
 }

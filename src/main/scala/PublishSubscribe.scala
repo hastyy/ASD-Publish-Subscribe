@@ -38,9 +38,8 @@ class PublishSubscribe(ip: String, port: Int) extends Actor with Timers {
   var neighbours: Set[String] = Set()
   var topics: Set[String] = Set()
   var requested: Set[String] = Set()
-  // var delivered: Set[DeliveredMessage] = Set()
-  var delivered: Map[String, DeliveredMessage] = HashMap()
-  var neighboursTopics: Map[String, Set[String]] = HashMap()
+  var delivered: Map[String, DeliveredMessage] = HashMap()  // Mutable
+  var neighboursTopics: Map[String, Set[String]] = HashMap()  // Mutable
 
   // Timers
   timers.startPeriodicTimer(AntiEntropyTimer, AntiEntropyTimer, 15 seconds)
@@ -48,7 +47,7 @@ class PublishSubscribe(ip: String, port: Int) extends Actor with Timers {
   // Init
   override def preStart(): Unit = {
     super.preStart()
-    getHyParViewReference() ! GetNeighbours // Trigger GetNeighbours() request
+    hyParViewActor ! GetNeighbours // Trigger GetNeighbours() request
   }
 
   // Receive
@@ -58,46 +57,41 @@ class PublishSubscribe(ip: String, port: Int) extends Actor with Timers {
       if (neighbours.isEmpty) {
         neighbours = n
         neighbours.foreach(p => neighboursTopics(p) = Set())
-        println("Had no neighbours. Now have: " + neighbours.size)
-        announceTopics(n)
+        announceTopics(neighbours)
       } else {
         val newNeighbours = mergeNeighbours(n)
-        println("Had some neighbours. Now have: " + neighbours.size)
         announceTopics(newNeighbours)
       }
 
     case AntiEntropyTimer =>
-      println(">>>> AntiEntropyTimer disparou")
       val target = selectBestTarget()
-      println(">>>> Selected target: " + target)
       if (target != null) {
         var knownMessages: Set[String] = Set()
         delivered.values.foreach(m => {
           val mid = m._2
           knownMessages = knownMessages + mid
         })
-        getReference(target) ! Pull(MYSELF, knownMessages, topics) // knownMessages might be an empty set
+        remotePublishSubscribeActor(target) ! Pull(MYSELF, knownMessages, topics) // knownMessages might be an empty set
       }
 
     case Pull(sender, senderMsgs, senderTopics) =>
-      println(">>>> Received Pull from: " + sender)
       delivered.values.foreach(m => {
         val (topic, mid, message, hop) = m
         if (!senderMsgs.contains(mid) && senderTopics.contains(topic)) {
-          getReference(sender) ! EagerPush(MYSELF, topic, mid, message, hop + 1)
+          remotePublishSubscribeActor(sender) ! EagerPush(MYSELF, topic, mid, message, hop + 1)
         }
       })
 
     case EagerPush(sender, topic, mid, msg, hop) =>
       if (topics.contains(topic) && !delivered.contains(mid)) {
-        getApplicationReference() ! PSDeliver(topic, msg) // Trigger PSDeliver(topic, message) indication
+        applicationActor ! PSDeliver(topic, msg) // Trigger PSDeliver(topic, message) indication
         delivered(mid) = (topic, mid, msg, hop)
         requested = requested - mid // If it's there, removes
         (neighbours diff Set(sender)).foreach(p => {
           if (hop <= MAX_HOPS || msg.size < MESSAGE_SIZE_THRESHOLD) {
-            getReference(p) ! EagerPush(MYSELF, topic, mid, msg, hop + 1)
+            remotePublishSubscribeActor(p) ! EagerPush(MYSELF, topic, mid, msg, hop + 1)
           } else {
-            getReference(p) ! LazyPush(MYSELF, topic, mid)
+            remotePublishSubscribeActor(p) ! LazyPush(MYSELF, topic, mid)
           }
         })
       }
@@ -105,33 +99,32 @@ class PublishSubscribe(ip: String, port: Int) extends Actor with Timers {
     case LazyPush(sender, topic, mid) =>
       if (topics.contains(topic) && !delivered.contains(mid) && !requested.contains(mid)) {
         requested = requested + mid
-        getReference(sender) ! EagerPushRequest(MYSELF, mid)
+        remotePublishSubscribeActor(sender) ! EagerPushRequest(MYSELF, mid)
       }
 
     case EagerPushRequest(sender, mid) =>
       if (delivered.contains(mid)) {
         val (topic, _, msg, hop) = delivered(mid)
-        getReference(sender) ! EagerPush(MYSELF, topic, mid, msg, hop + 1)
+        remotePublishSubscribeActor(sender) ! EagerPush(MYSELF, topic, mid, msg, hop + 1)
       }
 
     case Publish(topic, message) =>
       val mid = generateID(topic+message)
       if (topics.contains(topic) && !delivered.contains(mid)) {
         delivered(mid) = (topic, mid, message, 0)
-        getApplicationReference() ! PSDeliver(topic, message) // Trigger PSDeliver(topic, message) indication
+        applicationActor ! PSDeliver(topic, message) // Trigger PSDeliver(topic, message) indication
       }
-      neighbours.foreach(p => getReference(p) ! EagerPush(MYSELF, topic, mid, message, 1))
+      neighbours.foreach(p => remotePublishSubscribeActor(p) ! EagerPush(MYSELF, topic, mid, message, 1))
 
     case Subscribe(topic) =>
       topics = topics + topic
-      neighbours.foreach(p => getReference(p) ! TopicUpdate(MYSELF, topics))
+      neighbours.foreach(p => remotePublishSubscribeActor(p) ! TopicUpdate(MYSELF, topics))
 
     case Unsubscribe(topic) =>
       topics = topics - topic
-      neighbours.foreach(p => getReference(p) ! TopicUpdate(MYSELF, topics))
+      neighbours.foreach(p => remotePublishSubscribeActor(p) ! TopicUpdate(MYSELF, topics))
 
     case TopicUpdate(sender, topics) =>
-      println(s">>>> $sender updated its topics!")
       neighboursTopics(sender) = topics
 
   }
@@ -155,12 +148,8 @@ class PublishSubscribe(ip: String, port: Int) extends Actor with Timers {
   }
 
   private def announceTopics(n: Set[String]): Unit = {
-    println("ANNOUNCING TOPICS!!! Set size: " + n.size + " Number of topics: " + topics.size)
     if (topics.nonEmpty) {
-      n.foreach(p => {
-        println(s"SENDING TOPIC UPDATE TO $p")
-        getReference(p) ! TopicUpdate(MYSELF, topics)
-      })
+      n.foreach(p => remotePublishSubscribeActor(p) ! TopicUpdate(MYSELF, topics))
     }
   }
 
@@ -196,15 +185,15 @@ class PublishSubscribe(ip: String, port: Int) extends Actor with Timers {
     return hashedString
   }
 
-  private def getReference(id: String) : ActorSelection = {
-    context.actorSelection("akka.tcp://"+ Global.SYSTEM_NAME +"@" + id + "/user/" + Global.PUBLISH_SUBSCRIBE_ACTOR_NAME)
+  private def remotePublishSubscribeActor(id: String) : ActorSelection = {
+    context.actorSelection(s"akka.tcp://${Global.SYSTEM_NAME}@$id/user/${Global.PUBLISH_SUBSCRIBE_ACTOR_NAME}")
   }
 
-  private def getHyParViewReference(): ActorSelection = {
-    context.actorSelection("akka.tcp://"+ Global.SYSTEM_NAME +"@" + MYSELF + "/user/" + Global.HYPARVIEW_ACTOR_NAME)
+  private def hyParViewActor: ActorSelection = {
+    context.actorSelection(s"akka.tcp://${Global.SYSTEM_NAME}@$MYSELF/user/${Global.HYPARVIEW_ACTOR_NAME}")
   }
 
-  private def getApplicationReference(): ActorSelection = {
-    context.actorSelection("akka.tcp://"+ Global.SYSTEM_NAME +"@" + MYSELF + "/user/" + Global.APPLICATION_ACTOR_NAME)
+  private def applicationActor: ActorSelection = {
+    context.actorSelection(s"akka.tcp://${Global.SYSTEM_NAME}@$MYSELF/user/${Global.APPLICATION_ACTOR_NAME}")
   }
 }
