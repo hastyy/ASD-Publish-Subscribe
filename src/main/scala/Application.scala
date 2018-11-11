@@ -62,7 +62,9 @@ class Application(ip: String, port: Int, pubSubActor: ActorRef) extends Actor {
       fileWriter.write(log)
 
     case PSDeliver(topic, message) =>
-      println("Message received.")
+      val log = "  > Message received:\nTopic: " + topic + "\nMessage: " + message
+      println(log)
+      fileWriter.write(log)
 
     case GetTopics =>
       if (topics.nonEmpty) {
