@@ -1,6 +1,6 @@
 object Global {
-  def SYSTEM_NAME = "PublishSubscribe"
-  def HYPARVIEW_ACTOR_NAME = "HyParView"
-  def PUBLISH_SUBSCRIBE_ACTOR_NAME = "PublishSubscribe"
-  def APPLICATION_ACTOR_NAME = "ApplicationTest"
+  val SYSTEM_NAME = "PublishSubscribe"
+  val HYPARVIEW_ACTOR_NAME = "HyParView"
+  val PUBLISH_SUBSCRIBE_ACTOR_NAME = "PublishSubscribe"
+  val APPLICATION_ACTOR_NAME = "ApplicationTest"
 }
