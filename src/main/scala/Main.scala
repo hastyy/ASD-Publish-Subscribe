@@ -3,6 +3,7 @@ import com.typesafe.config.{Config, ConfigFactory}
 import scala.io.StdIn._
 import util.control.Breaks._
 import scala.util.matching._
+import scala.util.Random
 
 import Global._
 import Application._
@@ -16,6 +17,9 @@ object Main {
   val TOPICS = "TOPICS"
   val VIEWS = "VIEWS"
   val NEIGH_TOPICS = "NTOPICS"
+  val STATS = "STATS"
+  val BENCHMARK = "BENCHMARK"
+  val CRASH_BENCHMARK = "CRASH"
   val HELP = "HELP"
   val QUIT = "Q"
 
@@ -26,7 +30,8 @@ object Main {
     UNSUBSCRIBE -> "Unsubscribe a topic: UNSUB <topic>",
     TOPICS -> "Get subscribed topics: TOPICS",
     VIEWS -> "Shows the active and passive view: VIEWS",
-    NEIGH_TOPICS -> "Shows all of our neighbours' topics: NTOPICS"
+    NEIGH_TOPICS -> "Shows all of our neighbours' topics: NTOPICS",
+    STATS -> "Shows amount of messages sent, received and delivered: STATS"
   )
 
   // Actors
@@ -102,6 +107,9 @@ object Main {
           case TOPICS => handleTopics(command)
           case VIEWS => handleViews(command)
           case NEIGH_TOPICS => handleNeighbourTopics(command)
+          case STATS => handleStats(command)
+          case BENCHMARK => handleBenchmark(command)
+          case CRASH_BENCHMARK => handleCrashBenchmark(command)
           case HELP => handleHelp()
           case QUIT => break
           case "" => print("")
@@ -159,6 +167,36 @@ object Main {
   private def handleNeighbourTopics(command: Array[String]): Unit = {
     if(command.length == 1) {
       applicationActor ! ShowNeighbourTopics
+    } else {
+      println("Wrong number of arguments.\n")
+    }
+  }
+
+  private def handleStats(command: Array[String]): Unit = {
+    if(command.length == 1) {
+      applicationActor ! ShowStats
+    } else {
+      println("Wrong number of arguments.\n")
+    }
+  }
+
+  private def handleBenchmark(command: Array[String]): Unit = {
+    if (command.length == 1) {
+      applicationActor ! BenchmarkSubscribe
+      Thread.sleep(45 * 1000)
+      applicationActor ! BenchmarkPublish
+    } else {
+      println("Wrong number of arguments.\n")
+    }
+  }
+
+  private def handleCrashBenchmark(command: Array[String]): Unit = {
+    if (command.length == 1) {
+      if (new Random().nextDouble() >= .6) {
+        applicationActor ! CrashBenchmark
+      } else {
+        println("Quit the application.\n")
+      }
     } else {
       println("Wrong number of arguments.\n")
     }

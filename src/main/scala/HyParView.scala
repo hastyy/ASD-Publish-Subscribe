@@ -1,6 +1,5 @@
 import akka.actor.{Actor, ActorSelection, Props, Timers}
 import scala.math._
-import scala.util.Random
 import scala.concurrent.duration._
 
 import Global._
@@ -30,6 +29,8 @@ object HyParView {
   final case object LogViews
 }
 
+// TODO: Check for missing neighbours indication (?) -> some neighbours don't get entry on PS neighbourTopics (rare)
+// TODO: Check for timer colision -> passiveView ""keeps"" dead peers even though timeout executes -> shuffle's fault?
 class HyParView(ip: String, port: Int, contact: String, nNodes: Int) extends Actor with Timers {
   import HyParView._
   import PublishSubscribe._
@@ -179,6 +180,7 @@ class HyParView(ip: String, port: Int, contact: String, nNodes: Int) extends Act
   }
 
   private def handleNeighbourRequestTimeout(peer: String): Unit = {
+    println(s"[HYPARVIEW] NEIGHBOUR REQUEST TIMEOUT: $peer")
     passiveView = passiveView - peer  // Removes if it's there
     sendRandomNeighbourRequest()
   }
@@ -307,29 +309,12 @@ class HyParView(ip: String, port: Int, contact: String, nNodes: Int) extends Act
     }
   }
 
-  private def getRandomElement(set: Set[String]): String = {
-    return set.toVector(new Random().nextInt(set.size))
-  }
-
-  private def getRandomSubset(set: Set[String], size: Int): Set[String] = {
-    var auxSet: Set[String] = set
-    var sample: Set[String] = Set()
-    if (set.nonEmpty) {
-      for (_ <- 1 to min(size, set.size)) {
-        val randomElement = getRandomElement(auxSet)
-        auxSet = auxSet - randomElement
-        sample = sample + randomElement
-      }
-    }
-    return sample
-  }
-
   /* ---------------------------- Application Handlers ---------------------------- */
 
   private def handleLogViews(): Unit = {
-    println("###### Active View ######")
+    println(s"###### Active View: ${activeView.size} elements ######")
     activeView.foreach(println)
-    println("###### Passive View ######")
+    println(s"###### Passive View: ${passiveView.size} elements ######")
     passiveView.foreach(println)
     println()
   }
